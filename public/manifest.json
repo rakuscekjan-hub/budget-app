@@ -1,0 +1,25 @@
+{
+  "name": "BudgetApp",
+  "short_name": "Budget",
+  "description": "Grip op je vaste lasten en vrij besteedbaar bedrag",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#6366f1",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["finance", "productivity"]
+}
