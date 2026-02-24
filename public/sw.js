@@ -1,32 +1,47 @@
-// Service Worker — BudgetApp PWA
-// Minimale implementatie: cache-first voor statische assets, network-first voor API
+// Service Worker — BudgetApp PWA v2
+const CACHE_NAME = 'budget-app-v2'
+const STATIC = ['/', '/dashboard', '/incomes', '/expenses', '/transactions', '/insights', '/household']
 
-const CACHE_NAME = 'budget-app-v1'
-const STATIC_ASSETS = ['/', '/dashboard', '/incomes', '/expenses', '/insights']
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  )
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(STATIC)))
   self.skipWaiting()
 })
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
     )
   )
   self.clients.claim()
 })
 
-self.addEventListener('fetch', (event) => {
-  // Negeer Supabase API-calls
-  if (event.request.url.includes('supabase.co')) return
+self.addEventListener('fetch', e => {
+  if (e.request.url.includes('supabase.co')) return
+  e.respondWith(caches.match(e.request).then(cached => cached || fetch(e.request)))
+})
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request)
+// ── Push notificaties ─────────────────────────────────────────────────────────
+self.addEventListener('push', e => {
+  const data = e.data?.json() ?? { title: 'BudgetApp', body: 'Je hebt een nieuwe melding.' }
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { url: data.url || '/dashboard' },
+    })
+  )
+})
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close()
+  e.waitUntil(
+    clients.matchAll({ type: 'window' }).then(clientList => {
+      const url = e.notification.data?.url || '/dashboard'
+      const existing = clientList.find(c => c.url.includes(url))
+      if (existing) return existing.focus()
+      return clients.openWindow(url)
     })
   )
 })
