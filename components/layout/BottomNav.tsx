@@ -4,11 +4,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',    label: 'Home',       icon: '🏠' },
+  { href: '/dashboard',    label: 'Overzicht',   icon: '🏠' },
   { href: '/transactions', label: 'Transacties', icon: '💳' },
-  { href: '/expenses',     label: 'Uitgaven',   icon: '📋' },
-  { href: '/insights',     label: 'Analyse',    icon: '📊' },
-  { href: '/household',    label: 'Household',  icon: '👥' },
+  { href: '/budgets',      label: 'Budgetten',   icon: '🎯' },
+  { href: '/wallets',      label: 'Wallets',     icon: '👛' },
 ]
 
 export default function BottomNav() {
@@ -19,7 +18,7 @@ export default function BottomNav() {
       className="md:hidden fixed bottom-0 left-0 right-0 z-40
                  bg-white/90 dark:bg-slate-950/90 backdrop-blur
                  border-t border-slate-100 dark:border-slate-800
-                 grid grid-cols-5"
+                 grid grid-cols-4"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {NAV_ITEMS.map((item) => {

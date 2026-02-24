@@ -1,11 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { computeTotals, computeCategoryTotals, formatCurrency, toMonthly } from '@/lib/calculations'
+import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { nl } from 'date-fns/locale'
+import { computeTotals, formatCurrency } from '@/lib/calculations'
+import { getCategoryDef } from '@/types/database'
 import { ensureDailyTip } from './actions'
 import TipCard from '@/components/dashboard/TipCard'
-import SafeToSpendCard from '@/components/dashboard/SafeToSpendCard'
-import StatsGrid from '@/components/dashboard/StatsGrid'
-import CategoryList from '@/components/dashboard/CategoryList'
 import Link from 'next/link'
 import type { Expense } from '@/types/database'
 
@@ -16,127 +16,220 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Check profiel — gebruik maybeSingle() zodat ontbrekend profiel geen error gooit
   const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('onboarding_completed, display_name')
-    .eq('user_id', user.id)
-    .maybeSingle()
+    .from('profiles').select('onboarding_completed, display_name')
+    .eq('user_id', user.id).maybeSingle()
 
-  // Database niet opgezet → toon setup-instructie i.p.v. redirect-loop
-  if (profileError?.code === 'PGRST205') {
-    return <DbSetupBanner />
-  }
-
+  if (profileError?.code === 'PGRST205') return <DbSetupBanner />
   if (!profile?.onboarding_completed) redirect('/onboarding')
 
-  // Genereer dagelijkse tip (vangt eigen fouten af)
   await ensureDailyTip().catch(() => null)
 
-  const today = new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const monthStart = format(startOfMonth(now), 'yyyy-MM-dd')
+  const monthEnd   = format(endOfMonth(now), 'yyyy-MM-dd')
+
   const [
     { data: incomes },
     { data: expenses },
     { data: todayTip },
+    { data: wallets },
+    { data: budgets },
+    { data: monthTxns },
+    { data: allTxns },
   ] = await Promise.all([
-    supabase.from('incomes').select('*').eq('user_id', user.id).order('created_at'),
-    supabase.from('expenses').select('*').eq('user_id', user.id).order('created_at'),
-    supabase
-      .from('generated_tips')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('date', today)
-      .neq('status', 'dismissed')
-      .neq('status', 'done')
-      .maybeSingle(),
+    supabase.from('incomes').select('*').eq('user_id', user.id),
+    supabase.from('expenses').select('*').eq('user_id', user.id),
+    supabase.from('generated_tips').select('*').eq('user_id', user.id)
+      .eq('date', format(now, 'yyyy-MM-dd'))
+      .neq('status', 'dismissed').neq('status', 'done').maybeSingle(),
+    supabase.from('wallets').select('id, name, icon, color, balance')
+      .eq('user_id', user.id).order('is_default', { ascending: false }),
+    supabase.from('budgets').select('category, amount').eq('user_id', user.id),
+    supabase.from('transactions').select('category, amount, type, wallet_id')
+      .eq('user_id', user.id).gte('date', monthStart).lte('date', monthEnd),
+    supabase.from('transactions').select('wallet_id, type, amount')
+      .eq('user_id', user.id).not('wallet_id', 'is', null),
   ])
 
   const inc = incomes ?? []
   const exp = expenses ?? []
   const totals = computeTotals(inc, exp)
-  const categories = computeCategoryTotals(exp, totals.incomeMonthly)
-
-  const top5expenses = exp
-    .filter((e: Expense) => e.is_active)
-    .map((e: Expense) => ({ name: e.name, monthly: toMonthly(e.amount, e.frequency) }))
-    .sort((a: { monthly: number }, b: { monthly: number }) => b.monthly - a.monthly)
-    .slice(0, 5)
-
   const displayName = profile?.display_name ?? user.email?.split('@')[0] ?? 'je'
 
+  // Wallet saldo's (startbalans + alle transacties)
+  const allTxBalanceMap: Record<string, number> = {}
+  for (const tx of allTxns ?? []) {
+    if (!tx.wallet_id) continue
+    const delta = tx.type === 'income' ? Number(tx.amount) : -Number(tx.amount)
+    allTxBalanceMap[tx.wallet_id] = (allTxBalanceMap[tx.wallet_id] ?? 0) + delta
+  }
+  const walletCards = (wallets ?? []).map((w: any) => ({
+    id: w.id, name: w.name, icon: w.icon, color: w.color,
+    currentBalance: Number(w.balance) + (allTxBalanceMap[w.id] ?? 0),
+  }))
+  const totalBalance = walletCards.reduce((s, w) => s + w.currentBalance, 0)
+
+  // Budget voortgang
+  const spentMap: Record<string, number> = {}
+  for (const tx of monthTxns ?? []) {
+    if (tx.type === 'expense') spentMap[tx.category] = (spentMap[tx.category] ?? 0) + Number(tx.amount)
+  }
+  const budgetProgress = (budgets ?? [])
+    .map((b: any) => ({ category: b.category, amount: Number(b.amount), spent: spentMap[b.category] ?? 0 }))
+    .sort((a, b) => (b.spent / b.amount) - (a.spent / a.amount)).slice(0, 4)
+
+  // Top categorieën deze maand
+  const catMap: Record<string, number> = {}
+  for (const tx of monthTxns ?? []) {
+    if (tx.type === 'expense') catMap[tx.category] = (catMap[tx.category] ?? 0) + Number(tx.amount)
+  }
+  const topCats   = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  const monthTotal = Object.values(catMap).reduce((s, v) => s + v, 0)
+  const maand      = format(now, 'MMMM', { locale: nl })
+
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Hoi {displayName} 👋</h1>
-        <p className="text-slate-500 text-sm mt-0.5">
-          {new Date().toLocaleDateString('nl-NL', {
-            weekday: 'long', day: 'numeric', month: 'long',
-          })}
-        </p>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Hoi {displayName} 👋</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5 capitalize">
+            {format(now, 'EEEE d MMMM', { locale: nl })}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-slate-500 dark:text-slate-400">Totaal saldo</p>
+          <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{formatCurrency(totalBalance)}</p>
+        </div>
       </div>
 
-      <SafeToSpendCard
-        safeToSpend={totals.safeToSpend}
-        incomeMonthly={totals.incomeMonthly}
-        fixedCostsMonthly={totals.fixedCostsMonthly}
-        fixedCostsRatio={totals.fixedCostsRatio}
-      />
+      {/* Wallet scroll */}
+      {walletCards.length > 0 ? (
+        <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x scrollbar-hide">
+          {walletCards.map(w => (
+            <Link key={w.id} href="/wallets"
+                  className="flex-shrink-0 snap-start card p-4 w-44 relative overflow-hidden hover:shadow-md transition">
+              <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl" style={{ background: w.color }} />
+              <p className="text-2xl mt-1">{w.icon}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">{w.name}</p>
+              <p className="text-base font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+                {formatCurrency(w.currentBalance)}
+              </p>
+            </Link>
+          ))}
+          <Link href="/wallets"
+                className="flex-shrink-0 snap-start card p-4 w-36 flex flex-col items-center justify-center gap-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:shadow-md transition">
+            <span className="text-2xl">+</span>
+            <span className="text-xs text-center">Wallet toevoegen</span>
+          </Link>
+        </div>
+      ) : (
+        <Link href="/wallets" className="card p-4 flex items-center gap-3 hover:shadow-md transition">
+          <span className="text-2xl">👛</span>
+          <div>
+            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Voeg een wallet toe</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Houd je saldo bij per rekening</p>
+          </div>
+          <span className="ml-auto text-slate-400">→</span>
+        </Link>
+      )}
 
       {todayTip && <TipCard tip={todayTip} />}
 
-      <StatsGrid
-        incomeMonthly={totals.incomeMonthly}
-        fixedCostsMonthly={totals.fixedCostsMonthly}
-        safeToSpend={totals.safeToSpend}
-        incomesCount={inc.length}
-        expensesCount={exp.filter((e: Expense) => e.is_active).length}
-      />
-
-      {categories.length > 0 && (
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-slate-900">Per categorie</h2>
-            <Link href="/insights" className="text-sm text-brand-600 font-medium hover:underline">
-              Alle inzichten →
-            </Link>
+      {/* Budget voortgang */}
+      {budgetProgress.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 capitalize">Budgetten {maand}</h2>
+            <Link href="/budgets" className="text-xs text-brand-600 dark:text-brand-400 font-medium">Alle →</Link>
           </div>
-          <CategoryList categories={categories} />
-        </div>
-      )}
-
-      {top5expenses.length > 0 && (
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-slate-900">Top 5 kosten</h2>
-            <Link href="/expenses" className="text-sm text-brand-600 font-medium hover:underline">
-              Beheer →
-            </Link>
-          </div>
-          <ul className="space-y-2">
-            {top5expenses.map((item: { name: string; monthly: number }, i: number) => (
-              <li key={i} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                    {i + 1}
-                  </span>
-                  <span className="text-sm text-slate-700">{item.name}</span>
+          <div className="space-y-3">
+            {budgetProgress.map(b => {
+              const pct    = b.amount > 0 ? Math.min((b.spent / b.amount) * 100, 100) : 0
+              const isOver = b.spent > b.amount
+              const cat    = getCategoryDef(b.category)
+              return (
+                <div key={b.category}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      {cat.icon} {b.category}
+                    </span>
+                    <span className={`text-xs font-medium ${isOver ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                      {formatCurrency(b.spent)} / {formatCurrency(b.amount)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className={`h-full rounded-full transition-all ${isOver ? 'bg-red-500' : pct >= 80 ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                         style={{ width: `${pct}%` }} />
+                  </div>
                 </div>
-                <span className="text-sm font-semibold text-slate-900">
-                  {formatCurrency(item.monthly)}
-                  <span className="text-slate-400 font-normal">/m</span>
-                </span>
-              </li>
-            ))}
-          </ul>
+              )
+            })}
+          </div>
         </div>
       )}
 
-      {inc.length === 0 && (
-        <div className="card p-6 text-center border-2 border-dashed border-slate-200 bg-transparent shadow-none">
-          <p className="text-slate-500 text-sm mb-3">Nog geen inkomsten ingevuld.</p>
-          <Link href="/incomes" className="btn-primary">
-            Voeg inkomsten toe
-          </Link>
+      {/* Uitgaven deze maand */}
+      <div className="card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 capitalize">Uitgaven {maand}</h2>
+          <Link href="/transactions" className="text-xs text-brand-600 dark:text-brand-400 font-medium">Alle →</Link>
+        </div>
+        {topCats.length === 0 ? (
+          <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-4">
+            Nog geen transacties. Druk op <span className="font-bold">+</span> om te starten.
+          </p>
+        ) : (
+          <>
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-3">{formatCurrency(monthTotal)}</p>
+            <div className="space-y-2.5">
+              {topCats.map(([cat, amount]) => {
+                const catDef = getCategoryDef(cat)
+                const pct    = monthTotal > 0 ? (amount / monthTotal) * 100 : 0
+                return (
+                  <div key={cat} className="flex items-center gap-2">
+                    <span className="text-base w-6 text-center flex-shrink-0">{catDef.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between mb-0.5">
+                        <span className="text-xs text-slate-700 dark:text-slate-300 truncate">{cat}</span>
+                        <span className="text-xs font-medium text-slate-900 dark:text-slate-100 ml-2 flex-shrink-0">
+                          {formatCurrency(amount)}
+                        </span>
+                      </div>
+                      <div className="h-1 rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div className="h-full rounded-full transition-all"
+                             style={{ width: `${pct}%`, background: catDef.color }} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Vaste lasten */}
+      {(inc.length > 0 || exp.filter((e: Expense) => e.is_active).length > 0) && (
+        <div className="card p-4">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Vaste lasten</h2>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(totals.incomeMonthly)}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Inkomen</p>
+            </div>
+            <div>
+              <p className="text-base font-bold text-rose-600 dark:text-rose-400">{formatCurrency(totals.fixedCostsMonthly)}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Lasten</p>
+            </div>
+            <div>
+              <p className={`text-base font-bold ${totals.safeToSpend >= 0 ? 'text-brand-600 dark:text-brand-400' : 'text-red-600 dark:text-red-400'}`}>
+                {formatCurrency(totals.safeToSpend)}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Vrij besteedbaar</p>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -145,38 +238,12 @@ export default async function DashboardPage() {
 
 function DbSetupBanner() {
   return (
-    <div className="space-y-5">
-      <div className="card p-6 border-l-4 border-amber-400">
-        <div className="flex gap-3">
-          <span className="text-2xl">⚠️</span>
-          <div>
-            <h2 className="font-bold text-slate-900 mb-1">Database nog niet opgezet</h2>
-            <p className="text-slate-600 text-sm mb-4">
-              De tabellen bestaan nog niet in Supabase. Voer de SQL-migrations éénmalig uit.
-            </p>
-            <ol className="text-sm text-slate-700 space-y-2 mb-4">
-              <li className="flex gap-2">
-                <span className="font-bold text-amber-600">1.</span>
-                Ga naar{' '}
-                <strong>supabase.com → jouw project → SQL Editor</strong>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold text-amber-600">2.</span>
-                Klik <strong>New query</strong>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold text-amber-600">3.</span>
-                Plak de inhoud van <code className="bg-slate-100 px-1 rounded">supabase/migrations/setup_all.sql</code>
-              </li>
-              <li className="flex gap-2">
-                <span className="font-bold text-amber-600">4.</span>
-                Klik <strong>Run</strong> → herlaad deze pagina
-              </li>
-            </ol>
-            <p className="text-xs text-slate-400">
-              Het bestand staat in je project-map als <code>supabase/migrations/setup_all.sql</code>
-            </p>
-          </div>
+    <div className="card p-6 border-l-4 border-amber-400">
+      <div className="flex gap-3">
+        <span className="text-2xl">⚠️</span>
+        <div>
+          <h2 className="font-bold text-slate-900 dark:text-slate-100 mb-1">Database nog niet opgezet</h2>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Voer de SQL-migraties uit in de Supabase SQL Editor.</p>
         </div>
       </div>
     </div>

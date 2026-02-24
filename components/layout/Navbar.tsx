@@ -6,12 +6,12 @@ import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',     label: 'Dashboard',  icon: '🏠' },
-  { href: '/incomes',       label: 'Inkomsten',  icon: '💵' },
-  { href: '/expenses',      label: 'Uitgaven',   icon: '📋' },
-  { href: '/transactions',  label: 'Transacties',icon: '💳' },
-  { href: '/insights',      label: 'Analyse',    icon: '📊' },
-  { href: '/household',     label: 'Huishouden', icon: '👥' },
+  { href: '/dashboard',    label: 'Overzicht',   icon: '🏠' },
+  { href: '/transactions', label: 'Transacties', icon: '💳' },
+  { href: '/budgets',      label: 'Budgetten',   icon: '🎯' },
+  { href: '/wallets',      label: 'Wallets',     icon: '👛' },
+  { href: '/insights',     label: 'Analyse',     icon: '📊' },
+  { href: '/household',    label: 'Huishouden',  icon: '👥' },
 ]
 
 export default function Navbar({ userEmail }: { userEmail: string }) {

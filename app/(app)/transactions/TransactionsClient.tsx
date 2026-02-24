@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { format, addMonths, subMonths, parseISO } from 'date-fns'
 import { nl } from 'date-fns/locale'
 import { formatCurrency } from '@/lib/calculations'
-import { EXPENSE_CATEGORIES } from '@/types/database'
+import { EXPENSE_CATEGORIES, CATEGORY_TREE, getCategoryDef } from '@/types/database'
 import { createTransaction, updateTransaction, deleteTransaction, importTransactions } from './actions'
 import { parseCSV, type ParsedTransaction } from '@/lib/csv-parser'
 
@@ -15,12 +15,6 @@ interface Transaction {
 }
 
 const TYPE_EMOJI: Record<string, string> = { expense: '⬇️', income: '⬆️' }
-const CATEGORY_ICONS: Record<string, string> = {
-  Wonen: '🏠', Vervoer: '🚗', Verzekeringen: '🛡️', Abonnementen: '📺',
-  Boodschappen: '🛒', Gezondheid: '💊', 'Sport & Hobby': '⚽', Kleding: '👕',
-  Horeca: '🍽️', Onderwijs: '📚', Reizen: '✈️', 'Persoonlijke verzorging': '🧴',
-  Kinderen: '👶', Huisdieren: '🐾', Overig: '📦',
-}
 
 export default function TransactionsClient({
   transactions,
@@ -204,7 +198,7 @@ export default function TransactionsClient({
                 ) : (
                   <div className="table-row px-4">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-lg">{CATEGORY_ICONS[tx.category] ?? '📦'}</span>
+                      <span className="text-lg">{getCategoryDef(tx.category).icon}</span>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{tx.name}</p>
                         <p className="text-xs text-slate-400">{tx.category}{tx.imported ? ' · geïmporteerd' : ''}</p>
@@ -295,8 +289,8 @@ function TransactionForm({
         </div>
         <div className="col-span-2">
           <label className="label">Categorie</label>
-          <select name="category" defaultValue={transaction?.category ?? 'Overig'} className="input">
-            {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          <select name="category" defaultValue={transaction?.category ?? CATEGORY_TREE[0].name} className="input">
+            {CATEGORY_TREE.map(c => <option key={c.name} value={c.name}>{c.icon} {c.name}</option>)}
           </select>
         </div>
         <div className="col-span-2">

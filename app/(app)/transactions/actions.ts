@@ -11,18 +11,24 @@ export async function createTransaction(formData: FormData) {
   const amount = parseFloat(formData.get('amount') as string)
   if (isNaN(amount) || amount <= 0) throw new Error('Ongeldig bedrag')
 
+  const walletId = (formData.get('wallet_id') as string)?.trim() || null
+  const subcategory = (formData.get('subcategory') as string)?.trim() || null
+
   const { error } = await supabase.from('transactions').insert({
     user_id: user.id,
     name: (formData.get('name') as string).trim(),
     amount,
     type: formData.get('type') as string || 'expense',
     category: formData.get('category') as string || 'Overig',
+    subcategory,
     date: formData.get('date') as string || new Date().toISOString().split('T')[0],
     notes: (formData.get('notes') as string)?.trim() || null,
+    wallet_id: walletId,
   })
   if (error) throw new Error(error.message)
   revalidatePath('/transactions')
   revalidatePath('/dashboard')
+  revalidatePath('/wallets')
 }
 
 export async function updateTransaction(id: string, formData: FormData) {
@@ -33,19 +39,25 @@ export async function updateTransaction(id: string, formData: FormData) {
   const amount = parseFloat(formData.get('amount') as string)
   if (isNaN(amount) || amount <= 0) throw new Error('Ongeldig bedrag')
 
+  const walletId = (formData.get('wallet_id') as string)?.trim() || null
+  const subcategory = (formData.get('subcategory') as string)?.trim() || null
+
   const { error } = await supabase.from('transactions')
     .update({
       name: (formData.get('name') as string).trim(),
       amount,
       type: formData.get('type') as string,
       category: formData.get('category') as string,
+      subcategory,
       date: formData.get('date') as string,
       notes: (formData.get('notes') as string)?.trim() || null,
+      wallet_id: walletId,
     })
     .eq('id', id).eq('user_id', user.id)
   if (error) throw new Error(error.message)
   revalidatePath('/transactions')
   revalidatePath('/dashboard')
+  revalidatePath('/wallets')
 }
 
 export async function deleteTransaction(id: string) {
