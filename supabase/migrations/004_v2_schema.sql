@@ -5,14 +5,14 @@
 
 -- ── Households ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS households (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80),
   created_by  UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS household_members (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   household_id    UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   invited_email   TEXT,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS household_members (
 
 -- ── Transactions (variabele uitgaven) ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS transactions (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   household_id    UUID REFERENCES households(id) ON DELETE SET NULL,
   name            TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
@@ -44,7 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_household  ON transactions (househol
 
 -- ── Push subscriptions ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS push_subscriptions (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   endpoint      TEXT NOT NULL,
   p256dh        TEXT NOT NULL,
