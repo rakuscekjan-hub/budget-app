@@ -15,11 +15,14 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40
-                 bg-white/90 dark:bg-slate-950/90 backdrop-blur
-                 border-t border-slate-100 dark:border-slate-800
-                 grid grid-cols-4"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4"
+      style={{
+        background: 'rgba(10,8,20,0.92)',
+        borderTop: '1px solid rgba(91,76,255,0.18)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
     >
       {NAV_ITEMS.map((item) => {
         const active = pathname.startsWith(item.href)
@@ -27,14 +30,15 @@ export default function BottomNav() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex flex-col items-center justify-center py-2 gap-0.5 transition ${
-              active ? 'text-brand-600 dark:text-brand-400' : 'text-slate-500 dark:text-slate-500'
-            }`}
+            className="flex flex-col items-center justify-center py-2.5 gap-0.5 transition-all duration-150"
+            style={{ color: active ? '#8b7aff' : '#4a4270' }}
           >
+            {active && (
+              <span className="absolute w-8 h-px rounded-full -mt-2.5"
+                    style={{ background: 'linear-gradient(90deg, transparent, #5b4cff, transparent)' }} />
+            )}
             <span className="text-lg">{item.icon}</span>
-            <span className={`text-[9px] font-medium leading-none ${
-              active ? 'text-brand-600 dark:text-brand-400' : 'text-slate-500'
-            }`}>
+            <span className={`text-[9px] font-semibold leading-none`}>
               {item.label}
             </span>
           </Link>

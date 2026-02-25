@@ -68,9 +68,13 @@ export default function QuickAdd({ wallets }: { wallets: Wallet[] }) {
         onClick={() => { setOpen(true); setStep(1) }}
         aria-label="Transactie toevoegen"
         className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40
-                   w-14 h-14 rounded-full bg-brand-600 text-white shadow-lg shadow-brand-600/40
+                   w-14 h-14 rounded-full text-white
                    flex items-center justify-center text-2xl font-light
-                   hover:bg-brand-700 active:scale-95 transition-all duration-150 md:bottom-6"
+                   active:scale-95 transition-all duration-150 md:bottom-6"
+        style={{
+          background: 'linear-gradient(135deg, #5b4cff 0%, #7c5cfc 100%)',
+          boxShadow: '0 6px 28px rgba(91,76,255,0.55)',
+        }}
       >
         +
       </button>
@@ -78,16 +82,23 @@ export default function QuickAdd({ wallets }: { wallets: Wallet[] }) {
       {/* Modal */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={resetAndClose} />
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl"
-               style={{ maxHeight: '92vh', overflowY: 'auto' }}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={resetAndClose} />
+          <div className="relative w-full max-w-md rounded-t-3xl shadow-2xl"
+               style={{
+                 maxHeight: '92vh', overflowY: 'auto',
+                 background: '#0f0c1f',
+                 border: '1px solid rgba(91,76,255,0.25)',
+                 borderBottom: 'none',
+               }}>
 
             {/* Stap indicator */}
             <div className="flex justify-center gap-1.5 pt-3 pb-1">
               {[1,2,3].map(s => (
-                <div key={s} className={`h-1 rounded-full transition-all duration-300 ${
-                  s === step ? 'w-6 bg-brand-600' : s < step ? 'w-3 bg-brand-300' : 'w-3 bg-slate-200 dark:bg-slate-700'
-                }`} />
+                <div key={s} className="h-1 rounded-full transition-all duration-300"
+                     style={{
+                       width: s === step ? '24px' : '12px',
+                       background: s === step ? '#5b4cff' : s < step ? 'rgba(91,76,255,0.5)' : 'rgba(255,255,255,0.1)',
+                     }} />
               ))}
             </div>
 
@@ -95,14 +106,16 @@ export default function QuickAdd({ wallets }: { wallets: Wallet[] }) {
               {/* ── Stap 1: Type + Bedrag ── */}
               {step === 1 && (
                 <>
-                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded-2xl p-1 gap-1">
+                  <div className="flex rounded-2xl p-1 gap-1"
+                       style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(91,76,255,0.15)' }}>
                     {(['expense','income'] as const).map(t => (
                       <button key={t} onClick={() => setType(t)}
-                              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
-                                type === t
-                                  ? t === 'expense' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm'
-                                  : 'text-slate-500'
-                              }`}>
+                              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                              style={type === t ? {
+                                background: t === 'expense' ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
+                                color: t === 'expense' ? '#fca5a5' : '#6ee7b7',
+                                border: `1px solid ${t === 'expense' ? 'rgba(239,68,68,0.4)' : 'rgba(16,185,129,0.4)'}`,
+                              } : { color: '#6b5f8a' }}>
                         {t === 'expense' ? '⬇ Uitgave' : '⬆ Inkomst'}
                       </button>
                     ))}
@@ -110,9 +123,8 @@ export default function QuickAdd({ wallets }: { wallets: Wallet[] }) {
 
                   {/* Bedrag display */}
                   <div className="text-center py-2">
-                    <p className={`text-5xl font-bold tracking-tight ${
-                      type === 'expense' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
-                    }`}>
+                    <p className="text-5xl font-black tracking-tight"
+                       style={{ color: type === 'expense' ? '#fca5a5' : '#6ee7b7' }}>
                       € {amount || '0'}
                     </p>
                   </div>
@@ -121,9 +133,12 @@ export default function QuickAdd({ wallets }: { wallets: Wallet[] }) {
                   <div className="grid grid-cols-3 gap-2">
                     {['1','2','3','4','5','6','7','8','9',',','0','⌫'].map(k => (
                       <button key={k} onClick={() => onNumpad(k)}
-                              className={`py-3.5 rounded-2xl text-lg font-semibold transition active:scale-95 ${
-                                k === '⌫' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100'
-                              }`}>
+                              className="py-3.5 rounded-2xl text-lg font-semibold transition-all active:scale-95"
+                              style={{
+                                background: k === '⌫' ? 'rgba(239,68,68,0.1)' : 'rgba(91,76,255,0.1)',
+                                color: k === '⌫' ? '#f87171' : '#c4baff',
+                                border: `1px solid ${k === '⌫' ? 'rgba(239,68,68,0.15)' : 'rgba(91,76,255,0.15)'}`,
+                              }}>
                         {k}
                       </button>
                     ))}

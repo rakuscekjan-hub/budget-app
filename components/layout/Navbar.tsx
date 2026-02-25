@@ -6,19 +6,19 @@ import { createClient } from '@/lib/supabase/client'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 const NAV_ITEMS = [
-  { href: '/dashboard',     label: 'Overzicht',     icon: '🏠' },
-  { href: '/transactions',  label: 'Transacties',   icon: '💳' },
-  { href: '/budgets',       label: 'Budgetten',     icon: '🎯' },
-  { href: '/wallets',       label: 'Wallets',       icon: '👛' },
-  { href: '/savings',       label: 'Sparen',        icon: '🏦' },
-  { href: '/subscriptions', label: 'Abonnementen',  icon: '📱' },
-  { href: '/insights',      label: 'Analyse',       icon: '📊' },
-  { href: '/household',     label: 'Huishouden',    icon: '👥' },
+  { href: '/dashboard',     label: 'Overzicht'    },
+  { href: '/transactions',  label: 'Transacties'  },
+  { href: '/budgets',       label: 'Budgetten'    },
+  { href: '/wallets',       label: 'Wallets'      },
+  { href: '/savings',       label: 'Sparen'       },
+  { href: '/subscriptions', label: 'Abonnementen' },
+  { href: '/insights',      label: 'Analyse'      },
+  { href: '/household',     label: 'Huishouden'   },
 ]
 
 export default function Navbar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname()
-  const router = useRouter()
+  const router   = useRouter()
   const supabase = createClient()
 
   async function signOut() {
@@ -28,42 +28,71 @@ export default function Navbar({ userEmail }: { userEmail: string }) {
   }
 
   return (
-    <header className="hidden md:block sticky top-0 z-40
-                       bg-white/80 dark:bg-slate-950/80
-                       backdrop-blur border-b border-slate-100 dark:border-slate-800">
-      <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-        <Link href="/dashboard" className="flex items-center gap-2 font-bold text-slate-900 dark:text-white shrink-0">
-          <span className="text-xl">💰</span>
-          <span>BudgetApp</span>
+    <header className="hidden md:block sticky top-0 z-40 px-4 pt-3 pb-2">
+      {/* Pill navbar — EternaCloud style */}
+      <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 h-12 rounded-2xl"
+           style={{
+             background: 'rgba(19,16,42,0.85)',
+             border: '1px solid rgba(91,76,255,0.25)',
+             backdropFilter: 'blur(16px)',
+             WebkitBackdropFilter: 'blur(16px)',
+             boxShadow: '0 4px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(91,76,255,0.05) inset',
+           }}>
+
+        {/* Logo */}
+        <Link href="/dashboard" className="flex items-center gap-2 font-black text-white shrink-0 mr-2">
+          <span className="text-lg">💰</span>
+          <span className="text-sm tracking-tight">BudgetApp</span>
         </Link>
 
-        <nav className="flex items-center gap-0.5 overflow-x-auto">
+        {/* Nav links */}
+        <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${
-                pathname.startsWith(item.href)
-                  ? 'bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800'
-              }`}
+              className="px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all duration-150"
+              style={pathname.startsWith(item.href) ? {
+                background: 'rgba(91,76,255,0.25)',
+                color: '#a594ff',
+                boxShadow: '0 0 12px rgba(91,76,255,0.2)',
+              } : {
+                color: '#9b8fc4',
+              }}
+              onMouseEnter={e => {
+                if (!pathname.startsWith(item.href))
+                  (e.currentTarget as HTMLAnchorElement).style.color = '#fff'
+              }}
+              onMouseLeave={e => {
+                if (!pathname.startsWith(item.href))
+                  (e.currentTarget as HTMLAnchorElement).style.color = '#9b8fc4'
+              }}
             >
               {item.label}
             </Link>
           ))}
         </nav>
 
+        {/* Right side */}
         <div className="flex items-center gap-1 shrink-0">
           <ThemeToggle />
-          <span className="text-xs text-slate-400 hidden lg:block truncate max-w-[100px]">
+          <span className="text-xs hidden lg:block truncate max-w-[90px]" style={{ color: '#6b5f8a' }}>
             {userEmail}
           </span>
           <button
             onClick={signOut}
-            className="text-sm text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg
-                       hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-100 transition"
+            className="text-xs font-medium px-3 py-1.5 rounded-xl transition-all duration-150"
+            style={{ color: '#9b8fc4', background: 'rgba(91,76,255,0.08)' }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(91,76,255,0.2)'
+              ;(e.currentTarget as HTMLButtonElement).style.color = '#fff'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(91,76,255,0.08)'
+              ;(e.currentTarget as HTMLButtonElement).style.color = '#9b8fc4'
+            }}
           >
-            Uit
+            Uitloggen
           </button>
         </div>
       </div>
