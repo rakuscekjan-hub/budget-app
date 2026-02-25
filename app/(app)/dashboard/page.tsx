@@ -1,15 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns'
 import { nl } from 'date-fns/locale'
 import { computeTotals, formatCurrency } from '@/lib/calculations'
 import { getCategoryDef } from '@/types/database'
 import { ensureDailyTip } from './actions'
 import TipCard from '@/components/dashboard/TipCard'
+import MonthChart from '@/components/dashboard/MonthChart'
 import Link from 'next/link'
 import type { Expense } from '@/types/database'
 
 export const dynamic = 'force-dynamic'
+
+const CYCLE_MONTHS: Record<string, number> = {
+  weekly: 1/4.33, monthly: 1, quarterly: 3, yearly: 12,
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -29,6 +34,9 @@ export default async function DashboardPage() {
   const monthStart = format(startOfMonth(now), 'yyyy-MM-dd')
   const monthEnd   = format(endOfMonth(now), 'yyyy-MM-dd')
 
+  // Last 6 months for chart
+  const chartStart = format(startOfMonth(subMonths(now, 5)), 'yyyy-MM-dd')
+
   const [
     { data: incomes },
     { data: expenses },
@@ -37,6 +45,9 @@ export default async function DashboardPage() {
     { data: budgets },
     { data: monthTxns },
     { data: allTxns },
+    { data: chartTxns },
+    { data: savingsGoals },
+    { data: subscriptions },
   ] = await Promise.all([
     supabase.from('incomes').select('*').eq('user_id', user.id),
     supabase.from('expenses').select('*').eq('user_id', user.id),
@@ -50,6 +61,12 @@ export default async function DashboardPage() {
       .eq('user_id', user.id).gte('date', monthStart).lte('date', monthEnd),
     supabase.from('transactions').select('wallet_id, type, amount')
       .eq('user_id', user.id).not('wallet_id', 'is', null),
+    supabase.from('transactions').select('date, amount, type')
+      .eq('user_id', user.id).gte('date', chartStart).lte('date', monthEnd),
+    supabase.from('savings_goals').select('id, name, icon, color, target_amount, current_amount')
+      .eq('user_id', user.id).order('created_at').limit(3),
+    supabase.from('subscriptions').select('amount, billing_cycle')
+      .eq('user_id', user.id).eq('is_active', true),
   ])
 
   const inc = incomes ?? []
@@ -57,7 +74,7 @@ export default async function DashboardPage() {
   const totals = computeTotals(inc, exp)
   const displayName = profile?.display_name ?? user.email?.split('@')[0] ?? 'je'
 
-  // Wallet saldo's (startbalans + alle transacties)
+  // Wallet balances
   const allTxBalanceMap: Record<string, number> = {}
   for (const tx of allTxns ?? []) {
     if (!tx.wallet_id) continue
@@ -70,7 +87,7 @@ export default async function DashboardPage() {
   }))
   const totalBalance = walletCards.reduce((s, w) => s + w.currentBalance, 0)
 
-  // Budget voortgang
+  // Budget progress
   const spentMap: Record<string, number> = {}
   for (const tx of monthTxns ?? []) {
     if (tx.type === 'expense') spentMap[tx.category] = (spentMap[tx.category] ?? 0) + Number(tx.amount)
@@ -79,7 +96,7 @@ export default async function DashboardPage() {
     .map((b: any) => ({ category: b.category, amount: Number(b.amount), spent: spentMap[b.category] ?? 0 }))
     .sort((a, b) => (b.spent / b.amount) - (a.spent / a.amount)).slice(0, 4)
 
-  // Top categorieën deze maand
+  // Top categories
   const catMap: Record<string, number> = {}
   for (const tx of monthTxns ?? []) {
     if (tx.type === 'expense') catMap[tx.category] = (catMap[tx.category] ?? 0) + Number(tx.amount)
@@ -87,6 +104,38 @@ export default async function DashboardPage() {
   const topCats   = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 5)
   const monthTotal = Object.values(catMap).reduce((s, v) => s + v, 0)
   const maand      = format(now, 'MMMM', { locale: nl })
+
+  // Chart: last 6 months
+  const chartData = Array.from({ length: 6 }, (_, i) => {
+    const d = subMonths(now, 5 - i)
+    const key = format(d, 'yyyy-MM')
+    return {
+      label: format(d, 'MMM', { locale: nl }),
+      expenses: 0,
+      income: 0,
+      isCurrent: i === 5,
+      key,
+    }
+  })
+  for (const tx of chartTxns ?? []) {
+    const key = (tx.date as string).slice(0, 7)
+    const entry = chartData.find(c => c.key === key)
+    if (!entry) continue
+    if (tx.type === 'expense') entry.expenses += Number(tx.amount)
+    else entry.income += Number(tx.amount)
+  }
+
+  // Savings summary
+  const goals = (savingsGoals ?? []).map((g: any) => ({
+    id: g.id, name: g.name, icon: g.icon, color: g.color,
+    target: Number(g.target_amount), current: Number(g.current_amount),
+  }))
+  const totalSaved  = goals.reduce((s, g) => s + g.current, 0)
+  const totalTarget = goals.reduce((s, g) => s + g.target, 0)
+
+  // Subscriptions monthly total
+  const subMonthly = (subscriptions ?? [])
+    .reduce((s: number, sub: any) => s + Number(sub.amount) / (CYCLE_MONTHS[sub.billing_cycle] ?? 1), 0)
 
   return (
     <div className="space-y-4">
@@ -136,6 +185,16 @@ export default async function DashboardPage() {
       )}
 
       {todayTip && <TipCard tip={todayTip} />}
+
+      {/* Maandgrafiek */}
+      {chartTxns && chartTxns.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Uitgaven afgelopen 6 maanden</h2>
+          </div>
+          <MonthChart data={chartData} />
+        </div>
+      )}
 
       {/* Budget voortgang */}
       {budgetProgress.length > 0 && (
@@ -209,6 +268,56 @@ export default async function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* Spaardoelen preview */}
+      {goals.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Spaardoelen</h2>
+            <Link href="/savings" className="text-xs text-brand-600 dark:text-brand-400 font-medium">Alle →</Link>
+          </div>
+          <div className="space-y-3">
+            {goals.map(g => {
+              const pct = g.target > 0 ? Math.min((g.current / g.target) * 100, 100) : 0
+              return (
+                <div key={g.id}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      {g.icon} {g.name}
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      {formatCurrency(g.current)} / {formatCurrency(g.target)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div className="h-full rounded-full transition-all"
+                         style={{ width: `${pct}%`, background: g.color }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {totalTarget > 0 && (
+            <p className="text-xs text-slate-400 mt-2 text-right">
+              {formatCurrency(totalSaved)} / {formatCurrency(totalTarget)} gespaard
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Abonnementen */}
+      {subMonthly > 0 && (
+        <Link href="/subscriptions" className="card p-4 flex items-center justify-between hover:shadow-md transition">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">📱</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Abonnementen</p>
+              <p className="text-xs text-slate-400">Per maand</p>
+            </div>
+          </div>
+          <p className="text-base font-bold text-slate-900 dark:text-slate-100">{formatCurrency(subMonthly)}</p>
+        </Link>
+      )}
 
       {/* Vaste lasten */}
       {(inc.length > 0 || exp.filter((e: Expense) => e.is_active).length > 0) && (
