@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    @apply bg-vault-bg text-slate-200 antialiased;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-vault-panel border border-white/5 rounded-2xl;
+  }
+  .gold-text {
+    @apply text-vault-gold font-bold;
+  }
+  .btn-gold {
+    @apply bg-vault-gold text-vault-bg font-bold rounded-xl px-4 py-3 active:scale-95 transition-transform disabled:opacity-40 disabled:active:scale-100;
+  }
+  .btn-ghost {
+    @apply bg-white/5 border border-white/10 rounded-xl px-4 py-3 font-semibold active:scale-95 transition-transform disabled:opacity-40;
+  }
+  .progress-track {
+    @apply h-2.5 rounded-full bg-black/40 overflow-hidden;
+  }
+  .progress-fill {
+    @apply h-full rounded-full transition-all duration-700 ease-out;
+  }
+}
