@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { GameProvider, useGame } from './hooks/useGameState'
 import GameScreen from './components/GameScreen'
-import CombatRoom from './components/CombatRoom'
+import DungeonView from './components/DungeonView'
 import ShopModal from './components/ShopModal'
 import Leaderboard from './components/Leaderboard'
 import GuildView from './components/GuildView'
@@ -91,7 +91,7 @@ function Shell() {
   if (run) {
     return (
       <div className="max-w-md mx-auto min-h-screen">
-        <CombatRoom onEnd={() => setSummary(endRun())} />
+        <DungeonView onEnd={() => setSummary(endRun())} />
         <BreakReminder />
         <Toast />
       </div>
