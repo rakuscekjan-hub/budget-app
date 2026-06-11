@@ -5,6 +5,7 @@ import { useGame } from '../hooks/useGameState'
 import HUD from './HUD'
 import LootChest from './LootChest'
 import { UPGRADES, upgradeCost, milestoneReward, MILESTONE_EVERY } from '../systems/progressionSystem'
+import { CLASSES } from '../systems/classes'
 import { KEYS_MAX, msToNextKey } from '../systems/monetizationLayer'
 import { todayKey, loginBonus, formatCountdown, crimsonVaultEvent, scarcityCount } from '../systems/fomoClock'
 
@@ -47,6 +48,32 @@ function LoginBonusBanner() {
       </div>
       <span className="text-2xl">→</span>
     </button>
+  )
+}
+
+function ClassPicker() {
+  // RPG identity: pick your class. Persistent, swappable between runs.
+  const { save, updateSave } = useGame()
+  return (
+    <div className="panel p-4 mb-3">
+      <p className="font-bold text-sm mb-2">🎭 Your Class</p>
+      <div className="grid grid-cols-3 gap-2">
+        {Object.values(CLASSES).map((c) => (
+          <button
+            key={c.id}
+            className={`btn-ghost !px-2 !py-3 text-center ${save.classId === c.id ? 'border-vault-gold' : ''}`}
+            onClick={() => updateSave({ classId: c.id })}
+          >
+            <p className="text-2xl">{c.glyph}</p>
+            <p className={`text-xs font-bold ${save.classId === c.id ? 'text-vault-gold' : ''}`}>{c.name}</p>
+            <p className="text-[9px] text-slate-500 leading-tight mt-1">{c.desc}</p>
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-500 mt-2">
+        💥 Special: <b>{CLASSES[save.classId]?.special.name}</b> — {CLASSES[save.classId]?.special.desc}
+      </p>
+    </div>
   )
 }
 
@@ -207,6 +234,7 @@ export default function GameScreen() {
     <div className="px-4">
       <Header />
       <LoginBonusBanner />
+      <ClassPicker />
       <StartRunCard />
       <HUD />
       <div className="h-3" />

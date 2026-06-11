@@ -97,6 +97,8 @@ function EventLog({ event }) {
               </span>
             )
           if (e.kind === 'defend') return <span key={i} className="mx-1 text-vault-xp font-bold">🛡️ guarding</span>
+          if (e.kind === 'heal') return <span key={i} className="mx-1 text-emerald-400 font-bold">+{e.amount} HP</span>
+          if (e.kind === 'levelup') return <span key={i} className="mx-1 text-vault-gold font-black">⬆️ LEVEL {e.level}!</span>
           return null
         })}
       </div>
@@ -110,10 +112,16 @@ export default function CombatRoom({ onEnd }) {
 
   if (!run?.combat && !run?.defeated) return null
   const c = run.combat
+  const sp = run.special
 
   const tapEnemy = (uid) => {
     combatAction(specialArmed ? 'special' : 'attack', uid)
     setSpecialArmed(false)
+  }
+
+  const tapSpecial = () => {
+    if (sp.target === 'all') combatAction('special') // sweeps everyone, no aiming needed
+    else setSpecialArmed((v) => !v)
   }
 
   return (
@@ -139,7 +147,7 @@ export default function CombatRoom({ onEnd }) {
           <EventLog event={c.lastEvent} />
 
           <p className="text-center text-[11px] text-slate-500">
-            {specialArmed ? '💥 Special armed — tap an enemy to unleash it' : 'Tap an enemy to attack it'}
+            {specialArmed ? `💥 ${sp.name} armed — tap an enemy to unleash it` : 'Tap an enemy to attack it'}
           </p>
 
           {/* action bar */}
@@ -147,10 +155,10 @@ export default function CombatRoom({ onEnd }) {
             <button
               className={`btn-ghost text-sm ${specialArmed ? 'border-vault-gold text-vault-gold' : ''}`}
               disabled={c.specialCd > 0}
-              onClick={() => setSpecialArmed((v) => !v)}
+              onClick={tapSpecial}
             >
-              💥 Special
-              <span className="block text-[9px] text-slate-500">{c.specialCd > 0 ? `ready in ${c.specialCd}` : '2.2× damage'}</span>
+              💥 {sp.name}
+              <span className="block text-[9px] text-slate-500">{c.specialCd > 0 ? `ready in ${c.specialCd}` : sp.desc}</span>
             </button>
             <button className="btn-ghost text-sm" onClick={() => { setSpecialArmed(false); combatAction('defend') }}>
               🛡️ Defend

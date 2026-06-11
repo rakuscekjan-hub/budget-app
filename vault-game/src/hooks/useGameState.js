@@ -23,9 +23,11 @@ import {
 import { todayKey, loginBonus, FLASH_OFFER } from '../systems/fomoClock'
 import { regenKeys, KEYS_MAX, canSpend, REVIVE_COST_VC } from '../systems/monetizationLayer'
 import { friendNotification } from '../systems/socialSystem'
+import { CLASSES, applyPerk, rollPerkChoices, xpForKill, xpForLevel } from '../systems/classes'
 
 export const DEFAULT_SAVE = {
-  version: 2,
+  version: 3,
+  classId: 'warrior',
   coins: 100,
   keys: KEYS_MAX,
   lastKeyRegen: Date.now(),
@@ -72,8 +74,6 @@ export const DIR_VECTORS = [
   [-1, 0],
 ]
 
-const SPECIAL_COOLDOWN = 3
-const SPECIAL_MULT = 2.2
 const BLOCK_FACTOR = 0.4 // defending player takes 40% of the volley
 const FAST_WIN_TURNS = 3 // win combat this fast → bonus chest
 
@@ -111,10 +111,24 @@ export function GameProvider({ children }) {
     setRun(next)
   }, [])
 
+  // Continuous first-person pose. Lives in a ref (mutated every frame by the
+  // 3D view) so walking never causes React re-renders; React state only
+  // changes on discrete events (combat, loot, stairs).
+  const poseRef = useRef({ x: 1.5, y: 1.5, yaw: 0, visited: new Set(), floor: 0 })
+
   // Read-only debug handle for tests/tooling.
   useEffect(() => {
-    window.__vault = { get run() { return runRef.current } }
+    window.__vault = { get run() { return runRef.current }, pose: poseRef.current }
     return () => { delete window.__vault }
+  }, [])
+
+  const resetPose = useCallback((dungeon, yaw) => {
+    const p = poseRef.current
+    p.x = dungeon.spawn.x + 0.5
+    p.y = dungeon.spawn.y + 0.5
+    p.yaw = yaw
+    p.visited = new Set([`${dungeon.spawn.x},${dungeon.spawn.y}`])
+    window.__vault && (window.__vault.pose = p)
   }, [])
 
   useDailyReset(save, setSave)
@@ -196,18 +210,27 @@ export function GameProvider({ children }) {
     }))
     const floor = 1
     const dungeon = generateFloor(floor, floorMultiplier(floor, null))
+    const cls = CLASSES[save.classId] || CLASSES.warrior
+    const maxHp = Math.round(stats.maxHp * cls.hpMult)
+    resetPose(dungeon, (spawnDirFor(dungeon) * Math.PI) / 2)
     setRunNow({
       floor,
-      hp: stats.maxHp,
-      maxHp: stats.maxHp,
-      attack: stats.attack,
-      defense: 1 + Math.floor(save.upgrades.hp / 2),
-      luck: stats.luck,
+      classId: cls.id,
+      special: cls.special,
+      hp: maxHp,
+      maxHp,
+      attack: Math.round(stats.attack * cls.atkMult),
+      defense: 1 + Math.floor(save.upgrades.hp / 2) + cls.defenseBonus,
+      luck: stats.luck + cls.luckBonus,
       coinGain: stats.coinGain,
+      moveSpeed: 1,
+      healPerKill: 0,
+      specialCooldownBase: 3,
+      level: 1,
+      xp: 0,
+      perkChoices: [], // queue of [perkId, perkId, perkId] sets awaiting a pick
+      perksTaken: {},
       dungeon,
-      pos: { ...dungeon.spawn },
-      dir: spawnDirFor(dungeon),
-      visited: { [`${dungeon.spawn.x},${dungeon.spawn.y}`]: true },
       combat: null,
       combo: 0,
       floorStartedAt: Date.now(),
@@ -222,29 +245,18 @@ export function GameProvider({ children }) {
       lastEvent: null,
     })
     return true
-  }, [floorMultiplier, save.keys, save.monthlyPass, save.upgrades.hp, setRunNow, setSave, stats])
-
-  const turnPlayer = useCallback(
-    (delta) => {
-      const r = runRef.current
-      if (!r || r.combat || r.defeated) return
-      setRunNow({ ...r, dir: (r.dir + delta + 4) % 4 })
-    },
-    [setRunNow]
-  )
+  }, [floorMultiplier, resetPose, save.classId, save.keys, save.monthlyPass, save.upgrades.hp, setRunNow, setSave, stats])
 
   const descendFloor = useCallback(() => {
     const r = runRef.current
     if (!r) return
     const floor = r.floor + 1
     const dungeon = generateFloor(floor, floorMultiplier(floor, r))
+    resetPose(dungeon, (spawnDirFor(dungeon) * Math.PI) / 2)
     setRunNow({
       ...r,
       floor,
       dungeon,
-      pos: { ...dungeon.spawn },
-      dir: spawnDirFor(dungeon),
-      visited: { [`${dungeon.spawn.x},${dungeon.spawn.y}`]: true },
       combat: null,
       floorStartedAt: Date.now(),
       tookDamageThisFloor: false,
@@ -260,63 +272,55 @@ export function GameProvider({ children }) {
       }
       return next
     })
-  }, [floorMultiplier, setRunNow, setSave])
+  }, [floorMultiplier, resetPose, setRunNow, setSave])
 
-  // Move one cell forward (sign 1) or backward (sign -1). Walking into an
-  // enemy group engages combat; chests collect; cleared stairs descend.
-  const stepPlayer = useCallback(
-    (sign) => {
+  // World triggers, called by the 3D view when the player walks into things.
+
+  const engageGroup = useCallback(
+    (gid) => {
       const r = runRef.current
-      if (!r || r.combat || r.defeated || r.chestQueue.length) return
-      const [dx, dy] = DIR_VECTORS[r.dir]
-      const tx = r.pos.x + dx * sign
-      const ty = r.pos.y + dy * sign
-      const d = r.dungeon
-      if (d.grid[ty]?.[tx] !== 0) return // wall
-
-      const group = d.enemies.find((g) => g.x === tx && g.y === ty)
-      if (group) {
-        // PLAY: combat_engage.mp3 — enemy encounter sting
-        setRunNow({
-          ...r,
-          combat: {
-            gid: group.gid,
-            enemies: withIntents(group.group.map((e) => ({ ...e }))),
-            turn: 1,
-            playerBlock: false,
-            specialCd: 0,
-            lastEvent: null,
-          },
-        })
-        return
-      }
-
-      const next = { ...r, pos: { x: tx, y: ty }, visited: { ...r.visited, [`${tx},${ty}`]: true } }
-
-      const chestIdx = d.chests.findIndex((c) => c.x === tx && c.y === ty)
-      if (chestIdx >= 0) {
-        next.dungeon = { ...d, chests: d.chests.filter((_, i) => i !== chestIdx) }
-        next.chestQueue = [...r.chestQueue, { floor: r.floor }]
-        setRunNow(next)
-        return
-      }
-
-      if (tx === d.stairs.x && ty === d.stairs.y) {
-        if (d.enemies.length > 0) {
-          const left = d.enemies.reduce((n, g) => n + g.group.length, 0)
-          showToast(`🔒 The stairs are sealed — ${left} ${left === 1 ? 'enemy' : 'enemies'} remain`)
-          setRunNow(next)
-          return
-        }
-        runRef.current = next
-        descendFloor()
-        return
-      }
-
-      setRunNow(next)
+      if (!r || r.combat || r.defeated || r.chestQueue.length || r.perkChoices.length) return
+      const group = r.dungeon.enemies.find((g) => g.gid === gid)
+      if (!group) return
+      // PLAY: combat_engage.mp3 — enemy encounter sting
+      setRunNow({
+        ...r,
+        combat: {
+          gid: group.gid,
+          enemies: withIntents(group.group.map((e) => ({ ...e }))),
+          turn: 1,
+          playerBlock: false,
+          specialCd: 0,
+          lastEvent: null,
+        },
+      })
     },
-    [descendFloor, setRunNow, showToast]
+    [setRunNow]
   )
+
+  const collectChestAt = useCallback(
+    (id) => {
+      const r = runRef.current
+      if (!r || r.combat || r.defeated) return
+      const chest = r.dungeon.chests.find((c) => c.id === id)
+      if (!chest) return
+      setRunNow({
+        ...r,
+        dungeon: { ...r.dungeon, chests: r.dungeon.chests.filter((c) => c.id !== id) },
+        chestQueue: [...r.chestQueue, { floor: r.floor }],
+      })
+    },
+    [setRunNow]
+  )
+
+  // Returns 'descend' | 'locked' | null so the view can react (toast/portal).
+  const tryStairs = useCallback(() => {
+    const r = runRef.current
+    if (!r || r.combat || r.defeated || r.chestQueue.length || r.perkChoices.length) return null
+    if (r.dungeon.enemies.length > 0) return 'locked'
+    descendFloor()
+    return 'descend'
+  }, [descendFloor])
 
   // One tactical combat turn: the player acts, deaths resolve, survivors
   // execute their telegraphed intents, then new intents are drawn.
@@ -330,32 +334,63 @@ export function GameProvider({ children }) {
       let enemies = c.enemies.map((e) => ({ ...e }))
       const events = []
       let playerBlock = false
+      let healed = 0
 
       if (action === 'defend') {
         playerBlock = true
         events.push({ kind: 'defend' })
         // PLAY: shield_up.mp3 — player guards
+      } else if (action === 'special') {
+        // Class special: Warrior nukes one, Rogue sweeps all, Mystic drains.
+        const sp = r.special
+        const targets =
+          sp.target === 'all'
+            ? enemies.filter((e) => e.hp > 0)
+            : [enemies.find((e) => e.uid === targetUid && e.hp > 0) || enemies.find((e) => e.hp > 0)].filter(Boolean)
+        if (!targets.length) return
+        let dealt = 0
+        for (const target of targets) {
+          const base = r.attack * sp.mult
+          const dmg = Math.max(1, Math.round(target.defending ? base / 2 : base))
+          target.hp = Math.max(0, target.hp - dmg)
+          dealt += dmg
+          events.push({ kind: 'special', dmg, crit: false, targetUid: target.uid, blocked: target.defending })
+        }
+        if (sp.lifesteal) healed += Math.round(dealt * sp.lifesteal)
+        // PLAY: special_unleash.mp3 — class special
       } else {
         const target = enemies.find((e) => e.uid === targetUid && e.hp > 0) || enemies.find((e) => e.hp > 0)
         if (!target) return
-        const crit = action === 'attack' && Math.random() * 100 < r.luck
-        const base = action === 'special' ? r.attack * SPECIAL_MULT : r.attack * (0.85 + Math.random() * 0.3) * (crit ? 2 : 1)
+        const crit = Math.random() * 100 < r.luck
+        const base = r.attack * (0.85 + Math.random() * 0.3) * (crit ? 2 : 1)
         const dmg = Math.max(1, Math.round(target.defending ? base / 2 : base))
         target.hp = Math.max(0, target.hp - dmg)
-        events.push({ kind: action, dmg, crit, targetUid: target.uid, blocked: target.defending })
+        events.push({ kind: 'attack', dmg, crit, targetUid: target.uid, blocked: target.defending })
         // PLAY: combat_hit.mp3 — each attack
       }
 
-      // resolve deaths → loot
+      // resolve deaths → loot, run-XP, level-ups
       const died = enemies.filter((e) => e.hp <= 0)
       enemies = enemies.filter((e) => e.hp > 0)
-      let { combo, coinsEarned, chestQueue, hp, tookDamageThisFloor } = r
+      let { combo, coinsEarned, chestQueue, hp, tookDamageThisFloor, xp, level } = r
+      let perkChoices = r.perkChoices
       for (const dead of died) {
         combo += 1
         coinsEarned += Math.round(dead.coins * r.coinGain * (1 + combo * 0.05))
         chestQueue = [...chestQueue, { floor: r.floor }]
+        healed += r.healPerKill
+        xp += xpForKill(dead)
         events.push({ kind: 'kill', name: dead.name })
       }
+      while (xp >= xpForLevel(level)) {
+        xp -= xpForLevel(level)
+        level += 1
+        perkChoices = [...perkChoices, rollPerkChoices(r.perksTaken)]
+        events.push({ kind: 'levelup', level })
+        // PLAY: level_up.mp3 — run level gained
+      }
+      hp = Math.min(r.maxHp, hp + healed)
+      if (healed > 0) events.push({ kind: 'heal', amount: healed })
       registerKills(died.length)
 
       if (!enemies.length) {
@@ -371,12 +406,16 @@ export function GameProvider({ children }) {
           combo,
           coinsEarned,
           chestQueue,
+          hp,
+          xp,
+          level,
+          perkChoices,
           dungeon: { ...r.dungeon, enemies: remaining },
           noDamageClears: floorCleared ? (tookDamageThisFloor ? 0 : r.noDamageClears + 1) : r.noDamageClears,
           lastEvent: { events, at: Date.now() },
         }
         setRunNow(next)
-        if (floorCleared) showToast('🔓 Floor cleared — the stairs are open')
+        if (floorCleared) showToast('🔓 Floor cleared — the portal hums open')
         return
       }
 
@@ -406,6 +445,9 @@ export function GameProvider({ children }) {
         combo,
         coinsEarned,
         chestQueue,
+        xp,
+        level,
+        perkChoices,
         tookDamageThisFloor,
         defeated: hp === 0,
         combat: {
@@ -413,13 +455,29 @@ export function GameProvider({ children }) {
           enemies: withIntents(enemies),
           turn: c.turn + 1,
           playerBlock: false,
-          specialCd: action === 'special' ? SPECIAL_COOLDOWN : Math.max(0, c.specialCd - 1),
+          specialCd: action === 'special' ? r.specialCooldownBase : Math.max(0, c.specialCd - 1),
           lastEvent: { events, at: Date.now() },
         },
         lastEvent: null,
       })
     },
     [registerKills, setRunNow, showToast]
+  )
+
+  // Level-up perk pick: applies the perk to the live run and pops the queue.
+  const choosePerk = useCallback(
+    (perkId) => {
+      const r = runRef.current
+      if (!r || !r.perkChoices.length || !r.perkChoices[0].includes(perkId)) return
+      const patch = applyPerk(r, perkId)
+      setRunNow({
+        ...r,
+        ...patch,
+        perkChoices: r.perkChoices.slice(1),
+        perksTaken: { ...r.perksTaken, [perkId]: (r.perksTaken[perkId] || 0) + 1 },
+      })
+    },
+    [setRunNow]
   )
 
   // Fleeing is allowed but not free: the enemies get one parting volley and
@@ -646,10 +704,13 @@ export function GameProvider({ children }) {
     sessionMinutes,
     nextMilestoneFloor: nextMilestone(save.bestFloor),
     loreForFloor,
+    poseRef,
     // actions
     startRun,
-    turnPlayer,
-    stepPlayer,
+    engageGroup,
+    collectChestAt,
+    tryStairs,
+    choosePerk,
     combatAction,
     combatFlee,
     openChest,

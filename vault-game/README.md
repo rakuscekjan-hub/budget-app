@@ -1,10 +1,11 @@
 # 🏛️ VAULT
 
-A mobile-first **first-person** roguelite dungeon crawler built around
-behavioral game design — walk through a procedurally generated maze on every
-floor (software raycaster, no 3D library), fight tactical turn-based battles
-against enemies that telegraph their moves, collect 200 artifacts, and keep
-your progress across deaths.
+A mobile-first **first-person 3D** roguelite RPG built around behavioral game
+design — walk freely through a procedurally generated, torch-lit maze on every
+floor (three.js/WebGL: textured walls, fog, flickering light), pick a class,
+level up mid-run with gear perks, fight tactical turn-based battles against
+enemies that telegraph their moves, collect 200 artifacts, and keep your
+progress across deaths.
 
 React 18 · Tailwind CSS · Vite · localStorage persistence. No backend (v1):
 leaderboards, friends, and guildmates are simulated locally behind clean system
@@ -21,13 +22,17 @@ npm run build    # production bundle in dist/
 
 ## The game
 
-- **Core loop** — explore each floor's maze in first person (D-pad or
-  WASD/arrows), find chests in the world, walk into enemy groups to engage.
-  Combat is tactical and turn-based: every enemy telegraphs its next move
-  (attack for X / charging / defending) and you choose attack, defend
-  (block 60%), special (2.2×, 3-turn cooldown) or flee (they strike once).
-  The stairs down stay sealed until the floor is cleared. Death ends the run
-  but meta-progression (coins, artifacts, upgrades, rank) survives.
+- **Core loop** — explore each floor's 3D maze in first person (virtual
+  joystick + look-drag on touch, WASD + mouse on desktop), find chests in the
+  world, walk into enemy groups to engage. Combat is tactical and turn-based:
+  every enemy telegraphs its next move (attack for X / charging / defending)
+  and you choose attack, defend (block 60%), your class special, or flee
+  (they strike once). The stair-portal stays sealed until the floor is
+  cleared. Death ends the run but meta-progression survives.
+- **RPG layer** — three classes (Warrior 🛡️ / Rogue 🗡️ / Mystic 🔮) with
+  distinct stats and specials (Crushing Blow / Fan of Blades / Soul Siphon);
+  kills grant run-XP, and each level-up offers a pick-1-of-3 gear perk
+  (`systems/classes.js`) so every descent is a different build.
 - **Meta-progression** — permanent Attack/Vitality/Luck upgrades bought with
   earned Vault Coins, a 200-artifact codex with passive buffs, mastery ranks,
   and a 50-tier season pass.
@@ -58,12 +63,13 @@ npm run build    # production bundle in dist/
 
 ```
 src/
-  components/   DungeonView (first-person raycaster + minimap), CombatRoom
-                (tactical battles), GameScreen, LootChest, HUD, ShopModal,
-                ProfilePage, Leaderboard, GuildView
-  systems/      dungeonGenerator (maze per floor), lootSystem, difficultyAI,
-                progressionSystem, fomoClock, socialSystem,
-                monetizationLayer                      (pure, unit-testable)
+  components/   World3D (three.js renderer, controls, minimap), DungeonView
+                (run screen + overlays), CombatRoom (tactical battles),
+                GameScreen, LootChest, HUD, ShopModal, ProfilePage,
+                Leaderboard, GuildView
+  systems/      dungeonGenerator (maze per floor), classes (classes + perks),
+                lootSystem, difficultyAI, progressionSystem, fomoClock,
+                socialSystem, monetizationLayer        (pure, unit-testable)
   data/         artifacts (200), enemies, lore
   hooks/        useGameState (central store), useLocalStorage, useDailyReset
 ```
